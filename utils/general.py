@@ -10,6 +10,7 @@ import time
 from contextlib import contextmanager
 from copy import copy
 from pathlib import Path
+import sys
 
 import cv2
 import matplotlib
@@ -1106,6 +1107,55 @@ def plot_lr_scheduler(optimizer, scheduler, epochs=300, save_dir=''):
     plt.ylim(0)
     plt.tight_layout()
     plt.savefig(Path(save_dir) / 'LR.png', dpi=200)
+
+
+def plot_object_probability(img, pred, path='./inference/debug'):
+    def xygrid(px, py, px_stride, py_stride):
+      scales_x = torch.arange(px) * px_stride
+      scales_y = torch.arange(py) * py_stride
+      yv, xv = torch.meshgrid(scales_x, scales_y)
+      xy_grid = torch.stack((yv, xv), dim=2)
+      xy_grid = xy_grid.unsqueeze(dim=0)
+      if torch.cuda.is_available():
+        return xy_grid.cuda()
+      return xy_grid
+    h, w, _ = img.shape
+    # TODO: fix hardcoded grid shapes
+    grid_shapes = [(1, 3, 80, 80), (1, 3, 40, 40), (1, 3, 20, 20)]
+    counter = 0
+    grids = []
+    # slice pred into grid scales
+    for shape in grid_shapes:
+      size = np.prod(shape)
+      grid = pred[:, counter:counter+size, :]
+      grid = grid.reshape(shape + (85,))
+      grids.append(grid)
+      counter += size
+    # draw grid
+    images = []
+    for grid in grids:
+      _, _, px, py, _ = grid.shape
+      px_stride, py_stride = 640 // px, 640 // py
+      imcpy = img.copy() 
+      # take the best anchor box size score
+      grid = grid[..., 4]
+      gridmx, indxs = grid.max(dim=1)
+      gridmx = gridmx * 255 # normalize (0, 255)
+      gridmx = gridmx.unsqueeze(dim=3)
+      gridmap = xygrid(px, py, px_stride, py_stride)
+      # combine positional xygrid and object score tensors on gpu
+      heatmap = torch.cat((gridmx, gridmap), dim=-1)
+      heatmap = heatmap.view((1, px*py, 3))
+      heatmap = heatmap.squeeze(dim=0)
+      # create rectangles
+      for cell in heatmap:
+        x1y1 = (int(cell[2]), int(cell[1]))
+        x2y2 =(int(cell[2]) + py_stride, int(cell[1]) + px_stride)
+        cv2.rectangle(imcpy, x1y1, x2y2, (0, int(cell[0]), 0), -1)
+      # save image
+      cv2.addWeighted(imcpy, 0.5, img, 1 - 0.5, 0, imcpy)
+      cv2.imwrite('{0}/{1}_{2}_object_prob.jpg'.format(path, px, py), imcpy)
+    sys.exit() 
 
 
 def plot_test_txt():  # from utils.general import *; plot_test()

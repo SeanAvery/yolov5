@@ -14,7 +14,7 @@ from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import (
     check_img_size, non_max_suppression, apply_classifier, scale_coords,
-    xyxy2xywh, plot_one_box, strip_optimizer, set_logging)
+    xyxy2xywh, plot_one_box, strip_optimizer, set_logging, plot_object_probability)
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 
 
@@ -72,6 +72,10 @@ def detect(save_img=False):
         # Inference
         t1 = time_synchronized()
         pred = model(img, augment=opt.augment)[0]
+        
+        # Debug
+        if opt.mdebug:
+          plot_object_probability(im0s, pred)
 
         # Apply NMS
         pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
@@ -161,6 +165,7 @@ if __name__ == '__main__':
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
+    parser.add_argument('--mdebug', default=False, action='store_true', help='show object probability grid')
     opt = parser.parse_args()
     print(opt)
 
